@@ -12,10 +12,10 @@ app = flask.Flask(__name__)
 class DeviceList:
     def __init__(self):
         port = 5000  # 设置端口
-        # port = get_free_port()  # 自动获取空闲端口
-
         """
-        这是启动程序的方式, 可以根据你喜欢的方法设置打开方式
+        这是一种示例方式
+        port = get_free_port()  # 自动获取空闲端口
+    
         with open('D:/Desktop/python工具/局域网设备列表.html', 'w', encoding='utf-8') as f:
             f.write(f'<meta http-equiv="refresh" content="0;url=http://127.0.0.1:{port}/">')
         """
@@ -49,7 +49,7 @@ class DeviceList:
             def f():
                 for item in self.devices:
                     if item[1] not in self.devices_port:
-                        self.devices_port[item[1]] = lambda: get_port.GetPort(item[0], self, item[1])
+                        self.devices_port[item[1]] = lambda mac=item[1], ip=item[0]: get_port.GetPort(ip, self, mac)
 
                     if item[1] in [mac for _, mac, _ in self.marked_equipment] and type(self.devices_port[item[1]]) != get_port.GetPort:  # 优先后台加载收藏
                         self.devices_port[item[1]] = self.devices_port[item[1]]()
