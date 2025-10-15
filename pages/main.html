@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <title>网络内设备列表</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            height: 100vh;
+            overflow: hidden;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+
+        .list-container {
+            height: 50vh;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #all-devices-container {
+            border-bottom: 1px solid #ddd;
+            background-color: #fff;
+        }
+
+        #collect-devices-container {
+            background-color: #f9f9f9;
+        }
+
+        .list-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #2c3e50;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #3498db;
+        }
+
+        .device {
+            background-color: #fff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .device:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .device > div {
+            padding: 5px 0;
+        }
+
+        .device .name,
+        .device .IP,
+        .device .MAC {
+            flex: 1;
+            min-width: 140px;
+            color: #666;
+        }
+
+        .device .name {
+            font-weight: 500;
+            color: #2c3e50;
+        }
+
+        .device .IP,
+        .device .MAC {
+            font-family: monospace;
+        }
+
+        .add_button, .del_button {
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            text-align: center;
+            white-space: nowrap;
+            width: auto;
+            min-width: 60px;
+            /* 关键样式：确保按钮在最上层 */
+            position: relative;
+            z-index: 10;
+        }
+
+        .add_button {
+            background-color: #3498db;
+            color: white;
+            border: 1px solid #2980b9;
+        }
+
+        .add_button:hover {
+            background-color: #2980b9;
+        }
+
+        .del_button {
+            background-color: #e74c3c;
+            color: white;
+            border: 1px solid #c0392b;
+        }
+
+        .del_button:hover {
+            background-color: #c0392b;
+        }
+
+        /* 滚动条美化 */
+        .list-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .list-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .list-container::-webkit-scrollbar-thumb {
+            background: #bbb;
+            border-radius: 10px;
+        }
+
+        .list-container::-webkit-scrollbar-thumb:hover {
+            background: #999;
+        }
+
+        .loading {
+            color: #666;
+            text-align: center;
+            padding: 20px;
+        }
+
+        /* 新增和删除的动画效果 */
+        .device.added {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .device.removed {
+            animation: fadeOut 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(10px); }
+        }
+
+        /* MAC更新提示样式 */
+        .mac-updated {
+            animation: flashMac 1.5s ease-in-out;
+        }
+
+        @keyframes flashMac {
+            0%, 100% { background-color: #fff; }
+            50% { background-color: #d4edda; } /* 淡绿色提示 */
+        }
+
+        .device {
+            background-color: #fff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            transition: transform 0.2s, box-shadow 0.2s, background-color 0.5s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <div id="all-devices-container" class="list-container">
+        <div class="list-title">网络内设备</div>
+        <div id="all-devices">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+
+    <div id="collect-devices-container" class="list-container">
+        <div class="list-title">已收藏设备</div>
+        <div id="collect-devices">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+
+    <script>
+        // 确保DOM元素加载完成后再执行
+        document.addEventListener('DOMContentLoaded', function() {
+            // 检查必要的DOM元素是否存在
+            const allDevicesContainer = document.getElementById('all-devices');
+            const collectDevicesContainer = document.getElementById('collect-devices');
+
+            if (!allDevicesContainer || !collectDevicesContainer) {
+                console.error('关键DOM元素缺失，无法正常运行');
+                return;
+            }
+
+            // 刷新设备列表的时间间隔（毫秒）
+            const refreshInterval = 1000;
+            setInterval(refreshDeviceLists, refreshInterval);
+            // 立即刷新一次
+            refreshDeviceLists();
+
+            // 为整个容器添加点击事件委托，区分点击目标
+            allDevicesContainer.addEventListener('click', function(e) {
+                const target = e.target;
+                const deviceElement = target.closest('.device');
+
+                if (!deviceElement) return;
+
+                // 如果点击的是添加按钮
+                if (target.classList.contains('add_button')) {
+                    handleAddButtonClick(deviceElement);
+                    // 阻止事件传播和默认行为
+                    e.stopPropagation();
+                    e.preventDefault();
+                    return;
+                }
+
+                // 否则是点击设备卡片的其他区域，执行跳转
+                const macElement = deviceElement.querySelector('.MAC');
+                const ipElement = deviceElement.querySelector('.IP');
+                if (ipElement) {
+                    const mac = macElement.textContent.trim();
+                    const ip = ipElement.textContent.trim();
+                    openPortListPage(mac, ip);
+                }
+            });
+
+            // 为收藏设备容器添加点击事件委托
+            collectDevicesContainer.addEventListener('click', function(e) {
+                const target = e.target;
+                const deviceElement = target.closest('.device');
+
+                if (!deviceElement) return;
+
+                // 如果点击的是删除按钮
+                if (target.classList.contains('del_button')) {
+                    handleDeleteButtonClick(deviceElement);
+                    // 阻止事件传播和默认行为
+                    e.stopPropagation();
+                    e.preventDefault();
+                    return;
+                }
+
+                // 否则是点击设备卡片的其他区域，执行跳转
+                const macElement = deviceElement.querySelector('.MAC');
+                const ipElement = deviceElement.querySelector('.IP');
+                if (ipElement) {
+                    const mac = macElement.textContent.trim();
+                    const ip = ipElement.textContent.trim();
+                    openPortListPage(mac, ip);
+                }
+            });
+        });
+
+        // 处理添加按钮点击
+        function handleAddButtonClick(deviceElement) {
+            const macElement = deviceElement.querySelector('.MAC');
+            const ipElement = deviceElement.querySelector('.IP');
+
+            if (!macElement || !ipElement) return;
+
+            const mac = macElement.textContent.trim();
+            const ip = ipElement.textContent.trim();
+
+            // 弹出输入框让用户输入设备名称
+            const name = prompt('请输入设备名称:', `设备(${ip})`);
+            if (name !== null && name.trim() !== '') {
+                addToFavorites(mac, name.trim());
+            }
+        }
+
+        // 处理删除按钮点击
+        function handleDeleteButtonClick(deviceElement) {
+            const macElement = deviceElement.querySelector('.MAC');
+            if (!macElement) return;
+
+            const mac = macElement.textContent.trim();
+            if (confirm(`确定要取消收藏MAC为 ${mac} 的设备吗？`)) {
+                removeFromFavorites(mac);
+            }
+        }
+
+        // 刷新所有设备列表
+        function refreshDeviceLists() {
+            fetch('/device_list')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('网络响应不正常');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // data[0] 是所有设备列表，data[1] 是已收藏设备列表
+                    updateAllDevices(data[0]);
+                    updateFavoriteDevices(data[0], data[1]);
+                })
+                .catch(error => {
+                    console.error('获取设备列表失败:', error);
+                });
+        }
+
+        // 基于IP匹配设备，支持MAC更新
+        function updateAllDevices(newDevices) {
+            const container = document.getElementById('all-devices');
+            if (!container) return;
+
+            // 首次加载时清空容器
+            if (container.querySelector('.loading')) {
+                container.innerHTML = '';
+            }
+
+            // 提取当前已有的设备IP地址（作为唯一标识）
+            const existingIps = new Set();
+            const deviceElements = container.querySelectorAll('.device');
+            deviceElements.forEach(el => {
+                const ipEl = el.querySelector('.IP');
+                if (ipEl) {
+                    existingIps.add(ipEl.textContent.trim());
+                }
+            });
+
+            // 跟踪新设备中存在的IP地址
+            const newIps = new Set();
+            newDevices.forEach(device => {
+                const ip = device[0] || '未知IP';
+                newIps.add(ip);
+            });
+
+            // 1. 删除已不存在的设备（IP从新列表中消失）
+            deviceElements.forEach(el => {
+                const ipEl = el.querySelector('.IP');
+                if (ipEl) {
+                    const ip = ipEl.textContent.trim();
+                    if (!newIps.has(ip)) {
+                        el.classList.add('removed');
+                        setTimeout(() => {
+                            el.remove();
+                        }, 300);
+                    }
+                }
+            });
+
+            // 2. 添加新设备 / 更新已有设备（IP存在但MAC变化）
+            newDevices.forEach(device => {
+                const ip = device[0] || '未知IP';
+                const newMac = device[1] || '未知MAC';
+
+                // 查找IP匹配的已有设备
+                let existingDevice = null;
+                deviceElements.forEach(el => {
+                    const ipEl = el.querySelector('.IP');
+                    if (ipEl && ipEl.textContent.trim() === ip) {
+                        existingDevice = el;
+                    }
+                });
+
+                if (existingDevice) {
+                    // 检查MAC是否变化
+                    const oldMacEl = existingDevice.querySelector('.MAC');
+                    const oldMac = oldMacEl.textContent.trim();
+
+                    if (oldMac !== newMac) {
+                        // MAC变化：更新MAC值并添加视觉提示
+                        oldMacEl.textContent = newMac;
+                        existingDevice.classList.add('mac-updated'); // 触发更新动画
+                        // 动画结束后移除标记类
+                        setTimeout(() => {
+                            existingDevice.classList.remove('mac-updated');
+                        }, 500);
+                    }
+                } else {
+                    // IP不存在：创建新设备元素
+                    const deviceElement = document.createElement('div');
+                    deviceElement.className = 'device added';
+                    deviceElement.innerHTML = `
+                        <div class="IP">${ip}</div>
+                        <div class="MAC">${newMac}</div>
+                        <div class="add_button">+</div>
+                    `;
+                    container.appendChild(deviceElement);
+
+                    // 动画结束后移除动画类
+                    setTimeout(() => {
+                        deviceElement.classList.remove('added');
+                    }, 300);
+                }
+            });
+        }
+
+        // 已收藏设备列表：基于MAC，同步最新IP
+        function updateFavoriteDevices(allDevices, newFavoriteDevices) {
+            const container = document.getElementById('collect-devices');
+            if (!container) return;
+
+            // 首次加载时清空容器
+            if (container.querySelector('.loading')) {
+                container.innerHTML = '';
+            }
+
+            // 提取当前已有的收藏设备MAC地址
+            const existingMacs = new Set();
+            const deviceElements = container.querySelectorAll('.device');
+            deviceElements.forEach(el => {
+                const macEl = el.querySelector('.MAC');
+                if (macEl) {
+                    existingMacs.add(macEl.textContent.trim());
+                }
+            });
+
+            // 跟踪新收藏设备中存在的MAC地址
+            const newMacs = new Set();
+            newFavoriteDevices.forEach(device => {
+                const mac = device[1] || '未知MAC';
+                newMacs.add(mac);
+            });
+
+            // 1. 删除已取消收藏的设备
+            deviceElements.forEach(el => {
+                const macEl = el.querySelector('.MAC');
+                if (macEl) {
+                    const mac = macEl.textContent.trim();
+                    if (!newMacs.has(mac)) {
+                        el.classList.add('removed');
+                        setTimeout(() => {
+                            el.remove();
+                        }, 300);
+                    }
+                }
+            });
+
+            // 2. 添加或更新收藏设备
+            newFavoriteDevices.forEach(device => {
+                const [name, mac, oldIp] = device;
+                // 从所有设备列表中获取最新IP（避免收藏列表IP过时）
+                const latestIp = allDevices.find(dev => dev[1] === mac)?.[0] || oldIp || '未知IP';
+
+                // 查找MAC匹配的已有收藏设备
+                let existingDevice = null;
+                deviceElements.forEach(el => {
+                    const macEl = el.querySelector('.MAC');
+                    if (macEl && macEl.textContent.trim() === mac) {
+                        existingDevice = el;
+                    }
+                });
+
+                if (existingDevice) {
+                    // 更新名称和最新IP
+                    const nameEl = existingDevice.querySelector('.name');
+                    const ipEl = existingDevice.querySelector('.IP');
+                    let updated = false;
+
+                    if (nameEl && nameEl.textContent.trim() !== name) {
+                        nameEl.textContent = name;
+                        updated = true;
+                    }
+
+                    if (ipEl && ipEl.textContent.trim() !== latestIp) {
+                        ipEl.textContent = latestIp;
+                        updated = true;
+                    }
+
+                    if (updated) {
+                        // 直接设置蓝色背景，CSS过渡会自动让它后续自然消失
+                        existingDevice.style.backgroundColor = '#e8f4fd';
+                        // 新增：3秒后自动重置背景色（给足用户观察时间，过渡效果由CSS负责）
+                        setTimeout(() => {
+                            existingDevice.style.backgroundColor = '';
+                        }, 3000);
+                    }
+                } else {
+                    // 创建新收藏设备元素
+                    const deviceElement = document.createElement('div');
+                    deviceElement.className = 'device added';
+                    deviceElement.innerHTML = `
+                        <div class="name">${name}</div>
+                        <div class="IP">${latestIp}</div>
+                        <div class="MAC">${mac}</div>
+                        <div class="del_button">-</div>
+                    `;
+                    container.appendChild(deviceElement);
+
+                    setTimeout(() => {
+                        deviceElement.classList.remove('added');
+                    }, 300);
+                }
+            });
+        }
+
+        // 显示错误信息
+        function showError(containerId, message) {
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.innerHTML = `<div class="device"><div>${message}</div></div>`;
+            }
+        }
+
+        // 添加设备到收藏
+        function addToFavorites(mac, name) {
+            fetch('/add', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ mac: mac, name: name })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('收藏失败');
+                }
+                return response.text();
+            })
+            .then(data => {
+                if (data === 'ok') {
+                    refreshDeviceLists();
+                }
+            })
+            .catch(error => {
+                console.error('收藏设备失败:', error);
+                alert('收藏失败，请重试');
+            });
+        }
+
+        // 从收藏中移除设备
+        function removeFromFavorites(mac) {
+            fetch('/remove', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ mac: mac })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('取消收藏失败');
+                }
+                return response.text();
+            })
+            .then(data => {
+                if (data === 'ok') {
+                    refreshDeviceLists();
+                }
+            })
+            .catch(error => {
+                console.error('取消收藏设备失败:', error);
+                alert('取消收藏失败，请重试');
+            });
+        }
+
+        // 打开端口列表页
+        function openPortListPage(text, ip) {
+            // 对输入文本进行URL编码，确保特殊字符正确处理
+
+            if (ip == '离线'){  // 若设备未上线那么取消打开
+                return ;
+            }
+
+            const encodedText = encodeURIComponent(text);
+            const ip_encodedText = encodeURIComponent(ip);
+            // 构建完整的URL
+            const url = `/portList.html?mac=${encodedText}&ip=${ip_encodedText}`;
+            // 在新标签页中打开URL
+            window.open(url, '_blank');
+        }
+    </script>
+</body>
+</html>

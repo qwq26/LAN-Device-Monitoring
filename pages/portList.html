@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <title>设备端口列表</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            height: 100vh;
+            overflow: hidden;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+
+        /* 端口列表容器样式 */
+        .port-list-container {
+            height: 100vh;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: #fff;
+        }
+
+        /* 列表标题样式 */
+        .list-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #2c3e50;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #3498db;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .list-title .target-mac {
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: #3498db;
+            background-color: #f0f7ff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid #e1efff;
+        }
+
+        /* 端口项样式 */
+        .port-item {
+            background-color: #fff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 15px;
+            transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+            cursor: pointer;
+        }
+
+        /* 鼠标交互效果 */
+        .port-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            background-color: #f8fafc;
+        }
+
+        /* 端口号和服务类型样式 */
+        .port-number, .port-service {
+            flex: 1;
+            min-width: 120px;
+            padding: 5px 0;
+        }
+
+        .port-number {
+            font-weight: 600;
+            color: #2c3e50;
+            font-family: monospace;
+            font-size: 1.05rem;
+        }
+
+        .port-service {
+            color: #666;
+        }
+
+        /* 空状态/加载状态样式 */
+        .empty-state, .loading {
+            color: #666;
+            text-align: center;
+            padding: 40px 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .empty-state {
+            color: #888;
+        }
+
+        /* 错误提示样式 */
+        .error-state {
+            color: #e74c3c;
+            text-align: center;
+            padding: 40px 20px;
+            background-color: #fef2f2;
+            border-radius: 8px;
+            margin-top: 20px;
+            border: 1px solid #fee2e2;
+        }
+
+        /* 滚动条美化 */
+        .port-list-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .port-list-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .port-list-container::-webkit-scrollbar-thumb {
+            background: #bbb;
+            border-radius: 10px;
+        }
+
+        .port-list-container::-webkit-scrollbar-thumb:hover {
+            background: #999;
+        }
+
+        /* 端口项动画效果 */
+        .port-item.added {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .port-item.removed {
+            animation: fadeOut 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(10px); }
+        }
+    </style>
+</head>
+<body>
+    <!-- 端口列表容器 -->
+    <div class="port-list-container">
+        <div class="list-title">
+            设备端口列表
+            <span class="target-mac" id="target-mac">获取mac中...</span>
+        </div>
+        <div id="port-list">
+        </div>
+    </div>
+
+    <script>
+        // DOM加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 1. 提取地址栏mac参数
+            const targetMac = getUrlParam('mac');
+            const targetIp = getUrlParam('ip');
+            const macDisplay = document.getElementById('target-mac');
+            const portListContainer = document.getElementById('port-list');
+
+            // 检查mac参数是否存在
+            if (!targetMac) {
+                macDisplay.textContent = '未指定';
+                portListContainer.innerHTML = `
+                    <div class="error-state">
+                        错误：地址栏未包含mac参数<br>
+                        请使用格式：?mac=x.x.x.x（例如：http://xxx.com/port.html?mac=192.168.1.100）
+                    </div>
+                `;
+                return;
+            }
+
+            // 显示目标mac
+            macDisplay.textContent = targetIp
+
+            // 2. 初始化端口列表（立即加载一次 + 定时刷新）
+            refreshPortList(targetMac);
+            const refreshInterval = setInterval(() => refreshPortList(targetMac), 3000); // 3秒刷新一次
+
+            // 3. 点击端口项打开新页面（mac+端口）
+            portListContainer.addEventListener('click', function(e) {
+                const portItem = e.target.closest('.port-item');
+                if (portItem) {
+                    const port = portItem.querySelector('.port-number').textContent.trim();
+                    // 打开新页面（默认http协议，可根据需求调整为https）
+                    window.open(`http://${targetIp}:${port}`, '_blank');
+                }
+            });
+
+            // 页面关闭时清除定时器
+            window.addEventListener('beforeunload', function() {
+                clearInterval(refreshInterval);
+            });
+        });
+
+        /**
+         * 从地址栏获取指定参数值
+         * @param {string} paramName - 参数名
+         * @returns {string|null} 参数值（不存在则返回null）
+         */
+        function getUrlParam(paramName) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(paramName);
+        }
+
+        /**
+         * 刷新端口列表（核心功能）
+         * @param {string} mac - 目标设备mac
+         */
+        function refreshPortList(mac) {
+            const portListContainer = document.getElementById('port-list');
+            if (!portListContainer) return;
+
+            // 发送GET请求获取端口数据（携带mac参数）
+            fetch(`/port_list?mac=${mac}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP错误：${response.status} ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(portData => {
+                    // 验证返回数据格式（必须是[(port, 服务类型), ...]格式）
+                    if (!Array.isArray(portData)) {
+                        throw new Error('返回数据不是数组格式');
+                    }
+
+                    // 更新端口列表UI
+                    updatePortListUI(portData);
+                })
+                .catch(error => {
+                    console.error('获取端口列表失败:', error);
+                    // 显示错误状态
+                    portListContainer.innerHTML = `
+                        <div class="error-state">
+                            加载端口失败：${error.message}<br>
+                            请检查mac是否正确或服务是否可用
+                        </div>
+                    `;
+                });
+        }
+
+        /**
+         * 更新端口列表UI（增量更新，避免全量重建）
+         * @param {Array} newPortData - 最新端口数据（[(port, 服务类型), ...]）
+         */
+        function updatePortListUI(newPortData) {
+            const portListContainer = document.getElementById('port-list');
+            if (!portListContainer) return;
+
+            // 1. 处理空数据情况
+            if (newPortData.length === 0) {
+                portListContainer.innerHTML = ``;
+                return;
+            }
+
+            // 2. 提取现有端口信息（用端口号作为唯一标识）
+            const existingPorts = new Map(); // key: 端口号, value: 端口元素
+            portListContainer.querySelectorAll('.port-item').forEach(item => {
+                const portNum = item.querySelector('.port-number').textContent.trim();
+                existingPorts.set(portNum, item);
+            });
+
+            // 3. 提取新端口的端口号集合
+            const newPortNumbers = new Set();
+            newPortData.forEach(([port, service]) => {
+                const portStr = String(port).trim(); // 统一转为字符串（避免数字/字符串类型问题）
+                newPortNumbers.add(portStr);
+            });
+
+            // 4. 删除已不存在的端口（增量删除）
+            existingPorts.forEach((item, portNum) => {
+                if (!newPortNumbers.has(portNum)) {
+                    item.classList.add('removed');
+                    // 动画结束后移除元素
+                    setTimeout(() => item.remove(), 300);
+                }
+            });
+
+            // 5. 添加新端口 / 更新现有端口（增量更新）
+            newPortData.forEach(([port, service]) => {
+                const portStr = String(port).trim();
+                const serviceStr = String(service || '未知服务').trim(); // 处理服务类型为空的情况
+
+                // 情况1：端口已存在 → 更新服务类型
+                if (existingPorts.has(portStr)) {
+                    const existingItem = existingPorts.get(portStr);
+                    const serviceEl = existingItem.querySelector('.port-service');
+                    if (serviceEl && serviceEl.textContent.trim() !== serviceStr) {
+                        serviceEl.textContent = serviceStr;
+                        // 服务类型变化时添加视觉提示
+                        existingItem.style.backgroundColor = '#e8f4fd';
+                        setTimeout(() => existingItem.style.backgroundColor = '', 1000);
+                    }
+                }
+                // 情况2：端口不存在 → 创建新端口元素
+                else {
+                    const newPortItem = document.createElement('div');
+                    newPortItem.className = 'port-item added'; // 添加入场动画
+                    newPortItem.innerHTML = `
+                        <div class="port-number">${portStr}</div>
+                        <div class="port-service">${serviceStr}</div>
+                    `;
+                    portListContainer.appendChild(newPortItem);
+
+                    // 动画结束后移除动画类
+                    setTimeout(() => newPortItem.classList.remove('added'), 300);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
